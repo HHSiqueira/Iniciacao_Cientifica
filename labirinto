@@ -1,0 +1,173 @@
+#include "Arduino.h"
+#include <analogWrite.h>
+
+const int sensorEsquerdo = 33;  // Pino do sensor infravermelho esquerdo
+const int sensorFrente = 26;    // Pino do sensor infravermelho frontal
+const int sensorDireito = 25;   // Pino do sensor infravermelho direito
+
+enum Estado { AVANCANDO, VIRANDO_ESQUERDA, VIRANDO_DIREITA, VIRANDO_180 };
+Estado estadoAtual = AVANCANDO;
+
+char decisoes[100];  // Vetor para salvar as decisões tomadas
+//char decisoes[8] = {'F','E','V','F','F','E','D','V'};  
+int indiceDecisoes = 10;  // Índice atual do vetor de decisões
+
+//O autor do código de controle do motor foi Gustavo Nery da Eletrogate
+class DCMotor {  
+  int spd = 255, pin1, pin2;
+  
+  public:  
+  
+    void Pinout(int in1, int in2){ // Pinout é o método para a declaração dos pinos que vão controlar o objeto motor
+      pin1 = in1;
+      pin2 = in2;
+      pinMode(pin1, OUTPUT);
+      pinMode(pin2, OUTPUT);
+      }   
+    void Speed(int in1){ // Speed é o método que irá ser responsável por salvar a velocidade de atuação do motor
+      spd = in1;
+      }     
+    void Forward(){ // Forward é o método para fazer o motor girar para frente
+      analogWrite(pin1, spd);
+      digitalWrite(pin2, LOW);
+      }   
+    void Backward(){ // Backward é o método para fazer o motor girar para trás
+      digitalWrite(pin1, LOW);
+      analogWrite(pin2, spd);
+      }
+    void Stop(){ // Stop é o metodo para fazer o motor ficar parado.
+      digitalWrite(pin1, LOW);
+      digitalWrite(pin2, LOW);
+      }
+   };
+
+   DCMotor Motor1, Motor2; 
+   // Criação de dois objetos motores, já que usaremos dois motores, e eles já estão prontos para receber os comandos já configurados acima. 
+
+
+
+
+void setup() {
+  // Inicialização dos pinos dos sensores
+  pinMode(sensorEsquerdo, INPUT);
+  pinMode(sensorFrente, INPUT);
+  pinMode(sensorDireito, INPUT);
+  Motor1.Pinout(12,13); // Seleção dos pinos que cada motor usará, como descrito na classe.
+  Motor2.Pinout(14,27); 
+  Motor1.Speed(150); 
+  Motor2.Speed(150);
+  Serial.begin(9600);
+}
+int aux = 0;
+void loop() {
+  bool sensor_esquerdo = digitalRead(sensorEsquerdo);
+  bool sensor_frente = digitalRead(sensorFrente);
+  bool sensor_direito = digitalRead(sensorDireito);
+
+  switch (estadoAtual) {
+    case AVANCANDO:
+      if (!sensor_esquerdo && sensor_frente) {
+        avancar();
+        salvarDecisao('F');
+        Serial.println("Frente");
+      } else if(sensor_esquerdo) {
+        estadoAtual = VIRANDO_ESQUERDA;
+        
+      } else if(!sensor_esquerdo && sensor_direito && !sensor_frente){
+         estadoAtual = VIRANDO_DIREITA;
+      } else if(!sensor_esquerdo && !sensor_direito && !sensor_frente){
+        estadoAtual = VIRANDO_180;
+        Serial.println("Virando 180");
+      }
+      break;
+
+    case VIRANDO_ESQUERDA:
+      virar_esquerda();
+      salvarDecisao('E');
+      Serial.println("Esquerda");
+      estadoAtual = AVANCANDO;
+      break;
+
+    case VIRANDO_DIREITA:
+      virar_direita();
+      salvarDecisao('D');
+      Serial.println("Direita");
+      estadoAtual = AVANCANDO;
+      break;
+
+    case VIRANDO_180:
+      if (sensor_direito && sensor_frente && sensor_esquerdo) {
+        virar_180();
+        salvarDecisao('V');
+        Serial.println("180");
+      }
+      estadoAtual = AVANCANDO;
+      break;
+  }
+   delay(500);  
+}
+
+void avancar() {
+  Motor1.Forward(); 
+  Motor2.Forward();
+}
+
+void virar_esquerda() {
+  Motor1.Forward(); 
+  Motor2.Backward();
+}
+
+void virar_direita() {
+  Motor1.Backward(); 
+  Motor2.Forward(); 
+}
+
+void virar_180() {
+  while(sensorDireito == 1 && sensorFrente == 1 && sensorEsquerdo == 1){
+    virar_direita();
+  } 
+}
+
+
+void salvarDecisao(char decisao) {
+  decisoes[indiceDecisoes] = decisao;
+  indiceDecisoes++;
+}
+
+void otimizarDecisoes() {
+  bool modificouDecisoes = true;
+  while (modificouDecisoes) {
+    modificouDecisoes = false;    
+    // Verificar trechos desnecessários
+    for (int i = 0; i < indiceDecisoes - 3; i++) {
+      if (decisoes[i] == 'E' && decisoes[i + 1] == 'V') {
+        removerDecisao(i);
+        removerDecisao(i);
+        modificouDecisoes = true;
+        break;
+      }
+      if (decisoes[i] == 'D' && decisoes[i + 1] == 'V') {
+        removerDecisao(i);
+        removerDecisao(i);
+        modificouDecisoes = true;
+        break;
+      }
+      if (decisoes[i] == 'E' && decisoes[i + 1] == 'D' && decisoes[i + 2] == 'V') {
+        removerDecisao(i);
+        removerDecisao(i);
+        //removerDecisao(i);
+        modificouDecisoes = true;
+        break;
+      }
+      Serial.println(decisoes[i]);
+    }
+  }
+}
+
+void removerDecisao(int index) {
+  for (int i = index; i < indiceDecisoes - 1; i++) {
+    decisoes[i] = decisoes[i + 1];
+  }
+  indiceDecisoes--;
+}
+
